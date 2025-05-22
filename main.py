@@ -5,76 +5,81 @@ from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score
 from ucimlrepo import fetch_ucirepo
+import numpy as np
+import pandas as pd
 
-# Fetch the Abalone dataset
+# Load dataset
 abalone = fetch_ucirepo(id=1)
 
-# Extract features (X) and target (y)
-X = abalone.data.features
-y = abalone.data.targets
+# Split features and target
+X = abalone.data.features.copy()
+y = abalone.data.targets.copy()
 
-# Convert target variable (Rings) to age
+# Convert rings to age
 y = y + 1.5
 
-# Define categorical and continuous features
-categorical_features = ['Sex']  # Replace with the actual categorical column name
-continuous_features = ['Length', 'Diameter', 'Height', 'Whole_weight', 
-                       'Shucked_weight', 'Viscera_weight', 'Shell_weight']
+# Remove rows with invalid height
+valid_rows = X['Height'] > 0
+X = X[valid_rows]
+y = y[valid_rows]
 
-# Define the transformer for categorical features
-categorical_transformer = OneHotEncoder()
+# Define columns
+categorical_features = ['Sex']
+numerical_features = ['Length', 'Diameter', 'Height', 'Whole_weight', 
+                      'Shucked_weight', 'Viscera_weight', 'Shell_weight']
 
-# Add scaling for continuous features
-preprocessor = ColumnTransformer(
-    transformers=[
-        ('cat', categorical_transformer, categorical_features),
-        ('num', Pipeline(steps=[
-            ('scaler', StandardScaler())
-        ]), continuous_features)
-    ]
-)
+# Set up preprocessing
+preprocessor = ColumnTransformer([
+    ('cat', OneHotEncoder(), categorical_features),
+    ('num', Pipeline([('scaler', StandardScaler())]), numerical_features)
+])
 
-# Define multiple models to evaluate
+# Define models
 models = {
     'Linear Regression': LinearRegression(),
     'Decision Tree': DecisionTreeRegressor(random_state=42),
     'Random Forest': RandomForestRegressor(random_state=42)
 }
 
-# Split the data into training and testing sets
+# Run cross-validation
+print("Cross-validation results (R² scores):")
+for name, reg in models.items():
+    pipeline = Pipeline([
+        ('preprocessor', preprocessor),
+        ('regressor', reg)
+    ])
+    scores = cross_val_score(pipeline, X, y.to_numpy().ravel(), cv=5, scoring='r2')
+    print(f"{name}: Mean R² = {scores.mean():.4f}, Std = {scores.std():.4f}")
+
+# Train-test split
 X_train, X_test, y_train, y_test = train_test_split(X, y.to_numpy().ravel(), test_size=0.2, random_state=42)
 
+# Final evaluation
+print("\nTest set results:")
 best_model = None
 best_mse = float('inf')
 best_r2 = float('-inf')
 
-# Evaluate each model
-for name, regressor in models.items():
-    # Create a pipeline with preprocessing and the current model
-    model = Pipeline(steps=[
+for name, reg in models.items():
+    pipeline = Pipeline([
         ('preprocessor', preprocessor),
-        ('regressor', regressor)
+        ('regressor', reg)
     ])
+    pipeline.fit(X_train, y_train)
+    y_pred = pipeline.predict(X_test)
     
-    # Train the model
-    model.fit(X_train, y_train)
-    
-    # Make predictions
-    y_pred = model.predict(X_test)
-    
-    # Evaluate the model
     mse = mean_squared_error(y_test, y_pred)
     r2 = r2_score(y_test, y_pred)
-    print(f"{name} - Mean Squared Error: {mse:.2f}, Accuracy (R²): {r2 * 100:.2f}%")
     
-    # Track the best model
+    print(f"{name}: MSE = {mse:.2f}, R² = {r2 * 100:.2f}%")
+    
     if mse < best_mse:
         best_mse = mse
         best_r2 = r2
         best_model = name
 
-# Print the best model
-print(f"\nBest Model: {best_model}")
-print(f"Best Model - Mean Squared Error: {best_mse:.2f}, Accuracy (R²): {best_r2 * 100:.2f}%")
+print(f"\nBest model: {best_model}")
+print(f"Best model MSE: {best_mse:.2f}")
+print(f"Best model R²: {best_r2 * 100:.2f}%")
