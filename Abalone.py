@@ -7,41 +7,38 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split, cross_val_score
 from ucimlrepo import fetch_ucirepo
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-sns.set_style("whitegrid")           # nicer default style
+# Load dataset
+abalone = fetch_ucirepo(id=1)
 
-
-# 1. Load dataset and basic cleaning
-
-abalone = fetch_ucirepo(id=1)        # UCI repository
-
-# Split features / target
+# Split features and target
 X = abalone.data.features.copy()
-y = abalone.data.targets.copy() + 1.5    # Rings → Age (yrs)
-
-# Remove rows with invalid Height
-mask = X["Height"] > 0
-X, y = X[mask], y[mask]
-
-# Define feature groups
-categorical_features = ["Sex"]
-numerical_features = [
-    "Length", "Diameter", "Height", "Whole_weight",
-    "Shucked_weight", "Viscera_weight", "Shell_weight"
-]
-
-# 2. Exploratory Data Analysis (EDA)
+y = abalone.data.targets.copy()
 df = X.copy()
 df["Age"] = y
 
 print("Dataset shape:", df.shape)
 print(df.head(), "\n")
 print("Age summary:\n", df["Age"].describe(), "\n")
+
+
+# Convert rings to age
+y = y + 1.5
+
+# Remove rows with invalid height
+valid_rows = X['Height'] > 0
+X = X[valid_rows]
+y = y[valid_rows]
+
+# Define columns
+categorical_features = ['Sex']
+numerical_features = ['Length', 'Diameter', 'Height', 'Whole_weight', 
+                      'Shucked_weight', 'Viscera_weight', 'Shell_weight']
+
 
 # 2.1 Age distribution
 plt.figure(figsize=(8, 4))
@@ -85,58 +82,56 @@ plt.title("Average Age by Sex")
 plt.tight_layout()
 plt.show()
 
+# Set up preprocessing
+preprocessor = ColumnTransformer([
+    ('cat', OneHotEncoder(), categorical_features),
+    ('num', Pipeline([('scaler', StandardScaler())]), numerical_features)
+])
 
-
-
-# 3. Pre-processing pipeline
-preprocessor = ColumnTransformer(
-    transformers=[
-        ("cat", OneHotEncoder(), categorical_features),
-        ("num", Pipeline([("scaler", StandardScaler())]), numerical_features),
-    ]
-)
-
-
-# 4. Model definitions
+# Define models
 models = {
-    "Linear Regression": LinearRegression(),
-    "Decision Tree":     DecisionTreeRegressor(random_state=42),
-    "Random Forest":     RandomForestRegressor(random_state=42),
+    'Linear Regression': LinearRegression(),
+    'Decision Tree': DecisionTreeRegressor(random_state=42),
+    'Random Forest': RandomForestRegressor(random_state=42)
 }
 
-
-# 5. Cross-validation (5-fold, R²)
-print("\nCross-validation results (R²):")
+# Run cross-validation
+print("Cross-validation results (R² scores):")
 for name, reg in models.items():
-    pipe = Pipeline([("prep", preprocessor), ("reg", reg)])
-    scores = cross_val_score(
-        pipe, X, y.to_numpy().ravel(),
-        cv=5, scoring="r2"
-    )
-    print(f"{name:>16}: mean = {scores.mean():.4f}, std = {scores.std():.4f}")
+    pipeline = Pipeline([
+        ('preprocessor', preprocessor),
+        ('regressor', reg)
+    ])
+    scores = cross_val_score(pipeline, X, y.to_numpy().ravel(), cv=5, scoring='r2')
+    print(f"{name}: Mean R² = {scores.mean():.4f}, Std = {scores.std():.4f}")
 
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y.to_numpy().ravel(), test_size=0.2, random_state=42)
 
-# 6. Train / test split and final evaluation
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y.to_numpy().ravel(), test_size=0.2, random_state=42
-)
-
-print("\nHold-out test-set results:")
-best_name, best_mse, best_r2 = None, float("inf"), float("-inf")
+# Final evaluation
+print("\nTest set results:")
+best_model = None
+best_mse = float('inf')
+best_r2 = float('-inf')
 
 for name, reg in models.items():
-    pipe = Pipeline([("prep", preprocessor), ("reg", reg)])
-    pipe.fit(X_train, y_train)
-    preds = pipe.predict(X_test)
-
-    mse = mean_squared_error(y_test, preds)
-    r2  = r2_score(y_test, preds)
-    print(f"{name:>16}:  MSE = {mse:7.2f}   R² = {r2:6.3f}")
-
+    pipeline = Pipeline([
+        ('preprocessor', preprocessor),
+        ('regressor', reg)
+    ])
+    pipeline.fit(X_train, y_train)
+    y_pred = pipeline.predict(X_test)
+    
+    mse = mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+    
+    print(f"{name}: MSE = {mse:.2f}, R² = {r2 * 100:.2f}%")
+    
     if mse < best_mse:
-        best_name, best_mse, best_r2 = name, mse, r2
+        best_mse = mse
+        best_r2 = r2
+        best_model = name
 
-print(f"\  Best model: {best_name}")
-print(f"    Best MSE : {best_mse:.2f}")
-print(f"    Best R²  : {best_r2:.3f}")
+print(f"\nBest model: {best_model}")
+print(f"Best model MSE: {best_mse:.2f}")
+print(f"Best model R²: {best_r2 * 100:.2f}%")
