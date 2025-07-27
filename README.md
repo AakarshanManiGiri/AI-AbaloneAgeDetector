@@ -1,0 +1,2 @@
+This specific repository contains a linear regression model that is task-fitted to predict the age of abalone based on the input of physical dimensions as the data specifically the length diameter and shell weight. 
+The dataset used as test and train is the UCI Abalone Dataset its designed to be efficient, reduce required man-power, where age to harvest is typically checked manually which can be time and money intensive and relies heavily on skilled labor.
